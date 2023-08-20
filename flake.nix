@@ -56,9 +56,6 @@
         packages.default = naersk-lib.buildPackage {
           pname = "st7789-dev";
           src = ./.;
-          postInstall = ''
-            mv public $out
-          '';
         };
         devShells.default = with pkgs;
           mkShell {
