@@ -91,7 +91,7 @@
               wantedBy = ["multi-user.target"];
               environment = {};
               serviceConfig = {
-                DynamicUser = true;
+                User = "root";
                 Restart = "always";
                 ExecStart = "${cfg.package}/bin/st7789-dev";
               };
