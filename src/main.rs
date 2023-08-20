@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Result;
 use display_interface_spi::SPIInterfaceNoCS;
@@ -6,14 +6,15 @@ use embedded_graphics::{
     mono_font::{ascii::FONT_6X10, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
+    primitives::Rectangle,
     text::Text,
 };
-use mipidsi::Builder;
+use mipidsi::{models::ST7789, Builder, Display};
 use rppal::gpio::{Gpio, OutputPin};
 use rppal::hal::Delay;
 use rppal::spi::{Bus, Mode, SlaveSelect, Spi};
 use sysinfo::{ComponentExt, CpuExt, DiskExt, System, SystemExt};
-use tracing::{debug, info};
+use tracing::info;
 
 const SPI_RST: u8 = 27;
 const SPI_DC: u8 = 25;
@@ -63,65 +64,37 @@ async fn main() -> Result<()> {
 
     backlight.set_high();
     let text_style = MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE);
-    let char_h = 10;
 
     let mut sys = System::new_all();
     info!("Starting main loop");
     loop {
-        display.clear(Rgb565::BLACK).unwrap();
+        // display.clear(Rgb565::BLACK).unwrap();
 
-        sys.refresh_cpu();
-        sys.refresh_memory();
-        sys.refresh_components();
-        let mut text_y = char_h;
-        let mut data: Vec<String> = vec![];
-        data.append(
-            &mut sys
-                .cpus()
-                .iter()
-                .enumerate()
-                .map(|(i, cpu)| format!("CPU{i}: {:.1}%", cpu.cpu_usage()))
-                .collect::<Vec<_>>(),
+        let header = format!(
+            "{} {}",
+            sys.uptime(),
+            sys.long_os_version().unwrap_or_default()
         );
-        data.push(format!(
-            "MEM: {:.1}G/{:.1}G",
-            sys.used_memory() as f32 / (1024 * 1024 * 1024) as f32,
-            sys.total_memory() as f32 / (1024 * 1024 * 1024) as f32
-        ));
-        data.append(
-            &mut sys
-                .components()
-                .iter()
-                .map(|c| {
-                    format!(
-                        "{:3} {:.1}C/{:.1}C",
-                        c.label(),
-                        c.temperature(),
-                        c.critical().unwrap_or_default()
-                    )
-                })
-                .collect::<Vec<_>>(),
+        draw_data(
+            &Rectangle::new(Point::new(0, 0), Size::new(240, 20)),
+            text_style,
+            &vec![&header],
+            &mut display,
         );
-        data.append(
-            &mut sys
-                .disks()
-                .iter()
-                .map(|disk| {
-                    format!(
-                        "{:3} {:.1}G/{:.1}G",
-                        disk.name().to_str().unwrap_or_default(),
-                        disk.available_space() as f32 / (1024 * 1024 * 1024) as f32,
-                        disk.total_space() as f32 / (1024 * 1024 * 1024) as f32
-                    )
-                })
-                .collect::<Vec<_>>(),
+
+        let data = get_system_info(&mut sys);
+        draw_data(
+            &Rectangle::new(Point::new(0, 20), Size::new(100, 100)),
+            text_style,
+            &data[..6].iter().collect::<Vec<_>>(),
+            &mut display,
         );
-        for text in data.iter() {
-            text_y += char_h;
-            Text::new(&text, Point::new(0, text_y), text_style)
-                .draw(&mut display)
-                .unwrap();
-        }
+        draw_data(
+            &Rectangle::new(Point::new(100, 20), Size::new(140, 100)),
+            text_style,
+            &data[6..].iter().collect::<Vec<_>>(),
+            &mut display,
+        );
 
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
@@ -130,4 +103,94 @@ async fn main() -> Result<()> {
     display.clear(Rgb565::BLACK).unwrap();
 
     Ok(())
+}
+
+fn get_system_info(sys: &mut System) -> Vec<String> {
+    sys.refresh_cpu();
+    sys.refresh_memory();
+    sys.refresh_components();
+    let mut data: Vec<String> = vec![];
+    data.append(
+        &mut sys
+            .cpus()
+            .iter()
+            .enumerate()
+            .map(|(i, cpu)| format!("CPU{i}: {:.1}%", cpu.cpu_usage()))
+            .collect::<Vec<_>>(),
+    );
+    data.push(format!(
+        "MEM: {:.1}G/{:.1}G",
+        sys.used_memory() as f32 / (1024 * 1024 * 1024) as f32,
+        sys.total_memory() as f32 / (1024 * 1024 * 1024) as f32
+    ));
+    data.append(
+        &mut sys
+            .components()
+            .iter()
+            .map(|c| {
+                format!(
+                    "{:.3}: {:.1}C/{:.1}C",
+                    c.label(),
+                    c.temperature(),
+                    c.critical().unwrap_or_default()
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
+    data.append(
+        &mut sys
+            .disks()
+            .iter()
+            .map(|disk| {
+                format!(
+                    "{:3} {:.1}G/{:.1}G",
+                    disk.name().to_str().unwrap_or_default(),
+                    disk.available_space() as f32 / (1024 * 1024 * 1024) as f32,
+                    disk.total_space() as f32 / (1024 * 1024 * 1024) as f32
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
+    data
+}
+
+fn draw_data(
+    area: &Rectangle,
+    text_style: MonoTextStyle<'_, Rgb565>,
+    data: &Vec<&String>,
+    display: &mut Display<SPIInterfaceNoCS<Spi, OutputPin>, ST7789, OutputPin>,
+) {
+    let x = area.top_left.x;
+    let y = area.top_left.y;
+    let width = area.size.width;
+    let height = area.size.height;
+    let display = &mut display.clipped(&area);
+    display.clear(Rgb565::CSS_DARK_SLATE_GRAY).unwrap();
+
+    let char_h = text_style.font.character_size.height as i32;
+    let char_w = text_style.font.character_size.width;
+    let mut text_y = y;
+    let count_per_line: usize = width as usize / char_w as usize;
+
+    let mut split_data: Vec<&str> = vec![];
+    data.iter().for_each(|line| {
+        let mut remaining: &str = line;
+        while remaining.len() > count_per_line {
+            let split_index = remaining[..count_per_line]
+                .rfind(char::is_whitespace)
+                .unwrap_or(count_per_line);
+            split_data.push(&remaining[..split_index]);
+            remaining = &remaining[split_index..];
+        }
+        split_data.push(remaining);
+    });
+    for line in split_data.iter() {
+        text_y += char_h;
+        if text_y + char_h > y + height as i32 {
+            break;
+        }
+        Text::new(&line, Point::new(x, text_y), text_style)
+            .draw(display)
+            .unwrap();
+    }
 }
