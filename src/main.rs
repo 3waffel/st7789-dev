@@ -70,30 +70,47 @@ async fn main() -> Result<()> {
     loop {
         // display.clear(Rgb565::BLACK).unwrap();
 
-        let header = format!(
-            "{} {}",
-            sys.uptime(),
+        let top_area = Rectangle::new(Point::new(0, 0), Size::new(240, 20));
+        let uptime = sys.uptime();
+        let header_text = format!(
+            "{}:{}:{} {}",
+            uptime / 3600,
+            (uptime % 3600) / 60,
+            (uptime % 60),
             sys.long_os_version().unwrap_or_default()
         );
         draw_data(
-            &Rectangle::new(Point::new(0, 0), Size::new(240, 20)),
+            &top_area,
             text_style,
-            &vec![&header],
+            &vec![&header_text],
             &mut display,
+            Rgb565::CSS_DARK_VIOLET,
         );
 
         let data = get_system_info(&mut sys);
+        let left_area = Rectangle::new(Point::new(0, 20), Size::new(100, 100));
+        let right_area = Rectangle::new(Point::new(100, 20), Size::new(140, 100));
+        let bottom_area = Rectangle::new(Point::new(0, 120), Size::new(240, 120));
         draw_data(
-            &Rectangle::new(Point::new(0, 20), Size::new(100, 100)),
+            &left_area,
             text_style,
             &data[..6].iter().collect::<Vec<_>>(),
             &mut display,
+            Rgb565::CSS_DARK_SLATE_GRAY,
         );
         draw_data(
-            &Rectangle::new(Point::new(100, 20), Size::new(140, 100)),
+            &right_area,
             text_style,
             &data[6..].iter().collect::<Vec<_>>(),
             &mut display,
+            Rgb565::CSS_DARK_SLATE_GRAY,
+        );
+        draw_data(
+            &bottom_area,
+            text_style,
+            &vec![],
+            &mut display,
+            Rgb565::CSS_DARK_SLATE_GRAY,
         );
 
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -120,8 +137,8 @@ fn get_system_info(sys: &mut System) -> Vec<String> {
     );
     data.push(format!(
         "MEM: {:.1}G/{:.1}G",
-        sys.used_memory() as f32 / (1024 * 1024 * 1024) as f32,
-        sys.total_memory() as f32 / (1024 * 1024 * 1024) as f32
+        sys.used_memory() as f32 / (1024_i32.pow(3)) as f32,
+        sys.total_memory() as f32 / (1024_i32.pow(3)) as f32
     ));
     data.append(
         &mut sys
@@ -145,8 +162,8 @@ fn get_system_info(sys: &mut System) -> Vec<String> {
                 format!(
                     "{:3} {:.1}G/{:.1}G",
                     disk.name().to_str().unwrap_or_default(),
-                    disk.available_space() as f32 / (1024 * 1024 * 1024) as f32,
-                    disk.total_space() as f32 / (1024 * 1024 * 1024) as f32
+                    disk.available_space() as f32 / (1024_i32.pow(3)) as f32,
+                    disk.total_space() as f32 / (1024_i32.pow(3)) as f32
                 )
             })
             .collect::<Vec<_>>(),
@@ -159,13 +176,14 @@ fn draw_data(
     text_style: MonoTextStyle<'_, Rgb565>,
     data: &Vec<&String>,
     display: &mut Display<SPIInterfaceNoCS<Spi, OutputPin>, ST7789, OutputPin>,
+    background_color: Rgb565,
 ) {
     let x = area.top_left.x;
     let y = area.top_left.y;
     let width = area.size.width;
     let height = area.size.height;
     let display = &mut display.clipped(&area);
-    display.clear(Rgb565::CSS_DARK_SLATE_GRAY).unwrap();
+    display.clear(background_color).unwrap();
 
     let char_h = text_style.font.character_size.height as i32;
     let char_w = text_style.font.character_size.width;
