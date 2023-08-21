@@ -62,6 +62,7 @@ async fn main() -> Result<()> {
         .unwrap();
     info!("SPI set up");
 
+    backlight.set_pwm_frequency(100., 0.1)?;
     backlight.set_high();
     let text_style = MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE);
 
@@ -73,7 +74,7 @@ async fn main() -> Result<()> {
         let top_area = Rectangle::new(Point::new(0, 0), Size::new(240, 20));
         let uptime = sys.uptime();
         let header_text = format!(
-            "{}:{}:{} {}",
+            "{}:{:02}:{:02} {}",
             uptime / 3600,
             (uptime % 3600) / 60,
             (uptime % 60),
