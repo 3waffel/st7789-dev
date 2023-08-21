@@ -89,9 +89,9 @@ async fn main() -> Result<()> {
         );
 
         let data = get_system_info(&mut sys);
-        let left_area = Rectangle::new(Point::new(0, 20), Size::new(100, 100));
-        let right_area = Rectangle::new(Point::new(100, 20), Size::new(140, 100));
-        let bottom_area = Rectangle::new(Point::new(0, 120), Size::new(240, 120));
+        let left_area = Rectangle::new(Point::new(0, 20), Size::new(100, 200));
+        let right_area = Rectangle::new(Point::new(100, 20), Size::new(140, 200));
+        let bottom_area = Rectangle::new(Point::new(0, 220), Size::new(240, 20));
         draw_data(
             &left_area,
             text_style,
@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
             text_style,
             &vec![],
             &mut display,
-            Rgb565::CSS_DARK_SLATE_GRAY,
+            Rgb565::CSS_BLACK,
         );
 
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -138,8 +138,8 @@ fn get_system_info(sys: &mut System) -> Vec<String> {
     );
     data.push(format!(
         "MEM: {:.1}G/{:.1}G",
-        sys.used_memory() as f32 / (1024_i32.pow(3)) as f32,
-        sys.total_memory() as f32 / (1024_i32.pow(3)) as f32
+        sys.used_memory() as f32 / 1024_i32.pow(3) as f32,
+        sys.total_memory() as f32 / 1024_i32.pow(3) as f32
     ));
     data.append(
         &mut sys
@@ -162,9 +162,13 @@ fn get_system_info(sys: &mut System) -> Vec<String> {
             .map(|disk| {
                 format!(
                     "{:3} {:.1}G/{:.1}G",
-                    disk.name().to_str().unwrap_or_default(),
-                    disk.available_space() as f32 / (1024_i32.pow(3)) as f32,
-                    disk.total_space() as f32 / (1024_i32.pow(3)) as f32
+                    format!(
+                        "{} ({})",
+                        disk.mount_point().display(),
+                        disk.name().to_str().unwrap_or_default()
+                    ),
+                    (disk.total_space() - disk.available_space()) as f32 / 1024_i32.pow(3) as f32,
+                    disk.total_space() as f32 / 1024_i32.pow(3) as f32
                 )
             })
             .collect::<Vec<_>>(),
@@ -199,7 +203,7 @@ fn draw_data(
                 .rfind(char::is_whitespace)
                 .unwrap_or(count_per_line);
             split_data.push(&remaining[..split_index]);
-            remaining = &remaining[split_index..];
+            remaining = &remaining[split_index..].trim();
         }
         split_data.push(remaining);
     });
