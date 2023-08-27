@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use anyhow::Result;
 use display_interface_spi::SPIInterfaceNoCS;
 use embedded_graphics::{
@@ -10,11 +8,20 @@ use embedded_graphics::{
     text::Text,
 };
 use mipidsi::{models::ST7789, Builder, Display};
-use rppal::gpio::{Gpio, OutputPin};
-use rppal::hal::Delay;
-use rppal::spi::{Bus, Mode, SlaveSelect, Spi};
+use rppal::{
+    gpio::{Gpio, OutputPin},
+    hal::Delay,
+    spi::{Bus, Mode, SlaveSelect, Spi},
+};
+use std::sync::Arc;
+use std::time::Duration;
 use sysinfo::{ComponentExt, CpuExt, DiskExt, System, SystemExt};
 use tracing::info;
+
+pub mod data;
+pub mod layout;
+use data::*;
+use layout::*;
 
 const SPI_RST: u8 = 27;
 const SPI_DC: u8 = 25;
@@ -64,156 +71,32 @@ async fn main() -> Result<()> {
 
     backlight.set_pwm_frequency(100., 0.1)?;
     backlight.set_high();
-    let text_style = MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE);
-
-    let mut sys = System::new_all();
     info!("Starting main loop");
+
+    let layout_manager = Arc::new(LayoutManager::new());
+    let input_handler = layout_manager.clone();
+    let draw_handler = layout_manager.clone();
+    tokio::spawn(async move {
+        loop {
+            if key_ok.is_low() {
+                input_handler.input(KeyType::Ok).await;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            if key_cancel.is_low() {
+                input_handler.input(KeyType::Cancel).await;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    });
+
     loop {
-        // display.clear(Rgb565::BLACK).unwrap();
-
-        let top_area = Rectangle::new(Point::new(0, 0), Size::new(240, 20));
-        let uptime = sys.uptime();
-        let header_text = format!(
-            "{}:{:02}:{:02} {}",
-            uptime / 3600,
-            (uptime % 3600) / 60,
-            (uptime % 60),
-            sys.long_os_version().unwrap_or_default()
-        );
-        draw_data(
-            &top_area,
-            text_style,
-            &vec![&header_text],
-            &mut display,
-            Rgb565::CSS_DARK_VIOLET,
-        );
-
-        let data = get_system_info(&mut sys);
-        let left_area = Rectangle::new(Point::new(0, 20), Size::new(100, 200));
-        let right_area = Rectangle::new(Point::new(100, 20), Size::new(140, 200));
-        let bottom_area = Rectangle::new(Point::new(0, 220), Size::new(240, 20));
-        draw_data(
-            &left_area,
-            text_style,
-            &data[..6].iter().collect::<Vec<_>>(),
-            &mut display,
-            Rgb565::CSS_DARK_SLATE_GRAY,
-        );
-        draw_data(
-            &right_area,
-            text_style,
-            &data[6..].iter().collect::<Vec<_>>(),
-            &mut display,
-            Rgb565::CSS_DARK_SLATE_GRAY,
-        );
-        draw_data(
-            &bottom_area,
-            text_style,
-            &vec![],
-            &mut display,
-            Rgb565::CSS_BLACK,
-        );
-
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        draw_handler.draw(&mut display).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
     backlight.set_low();
     display.clear(Rgb565::BLACK).unwrap();
 
     Ok(())
-}
-
-fn get_system_info(sys: &mut System) -> Vec<String> {
-    sys.refresh_cpu();
-    sys.refresh_memory();
-    sys.refresh_components();
-    let mut data: Vec<String> = vec![];
-    data.append(
-        &mut sys
-            .cpus()
-            .iter()
-            .enumerate()
-            .map(|(i, cpu)| format!("CPU{i}: {:.1}%", cpu.cpu_usage()))
-            .collect::<Vec<_>>(),
-    );
-    data.push(format!(
-        "MEM: {:.1}G/{:.1}G",
-        sys.used_memory() as f32 / 1024_i32.pow(3) as f32,
-        sys.total_memory() as f32 / 1024_i32.pow(3) as f32
-    ));
-    data.append(
-        &mut sys
-            .components()
-            .iter()
-            .map(|c| {
-                format!(
-                    "{:.3}: {:.1}C/{:.1}C",
-                    c.label(),
-                    c.temperature(),
-                    c.critical().unwrap_or_default()
-                )
-            })
-            .collect::<Vec<_>>(),
-    );
-    data.append(
-        &mut sys
-            .disks()
-            .iter()
-            .map(|disk| {
-                format!(
-                    "{:3} {:.1}G/{:.1}G",
-                    format!(
-                        "{} ({})",
-                        disk.mount_point().display(),
-                        disk.name().to_str().unwrap_or_default()
-                    ),
-                    (disk.total_space() - disk.available_space()) as f32 / 1024_i32.pow(3) as f32,
-                    disk.total_space() as f32 / 1024_i32.pow(3) as f32
-                )
-            })
-            .collect::<Vec<_>>(),
-    );
-    data
-}
-
-fn draw_data(
-    area: &Rectangle,
-    text_style: MonoTextStyle<'_, Rgb565>,
-    data: &Vec<&String>,
-    display: &mut Display<SPIInterfaceNoCS<Spi, OutputPin>, ST7789, OutputPin>,
-    background_color: Rgb565,
-) {
-    let x = area.top_left.x;
-    let y = area.top_left.y;
-    let width = area.size.width;
-    let height = area.size.height;
-    let display = &mut display.clipped(&area);
-    display.clear(background_color).unwrap();
-
-    let char_h = text_style.font.character_size.height as i32;
-    let char_w = text_style.font.character_size.width;
-    let mut text_y = y;
-    let count_per_line: usize = width as usize / char_w as usize;
-
-    let mut split_data: Vec<&str> = vec![];
-    data.iter().for_each(|line| {
-        let mut remaining: &str = line;
-        while remaining.len() > count_per_line {
-            let split_index = remaining[..count_per_line]
-                .rfind(char::is_whitespace)
-                .unwrap_or(count_per_line);
-            split_data.push(&remaining[..split_index]);
-            remaining = &remaining[split_index..].trim();
-        }
-        split_data.push(remaining);
-    });
-    for line in split_data.iter() {
-        text_y += char_h;
-        if text_y + char_h > y + height as i32 {
-            break;
-        }
-        Text::new(&line, Point::new(x, text_y), text_style)
-            .draw(display)
-            .unwrap();
-    }
 }

@@ -7,12 +7,14 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.75"
+chrono = "0.4.26"
 display-interface-spi = "0.4.1"
 embedded-graphics = "0.8.1"
 mipidsi = "0.7.1"
 rppal = { version = "0.14.1", features = ["hal"] }
 spidev = "0.6.0"
 sysinfo = "0.29.8"
+textwrap = "0.16.0"
 tokio = { version = "1.32.0", features = ["full"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
