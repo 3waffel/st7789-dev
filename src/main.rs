@@ -1,26 +1,19 @@
 use anyhow::Result;
 use display_interface_spi::SPIInterfaceNoCS;
-use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
-    pixelcolor::Rgb565,
-    prelude::*,
-    primitives::Rectangle,
-    text::Text,
-};
-use mipidsi::{models::ST7789, Builder, Display};
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
+use mipidsi::Builder;
 use rppal::{
-    gpio::{Gpio, OutputPin},
+    gpio::Gpio,
     hal::Delay,
     spi::{Bus, Mode, SlaveSelect, Spi},
 };
-use std::sync::Arc;
 use std::time::Duration;
-use sysinfo::{ComponentExt, CpuExt, DiskExt, System, SystemExt};
+use std::time::Instant;
 use tracing::info;
 
+pub mod actor;
 pub mod data;
 pub mod layout;
-use data::*;
 use layout::*;
 
 const SPI_RST: u8 = 27;
@@ -73,26 +66,33 @@ async fn main() -> Result<()> {
     backlight.set_high();
     info!("Starting main loop");
 
-    let layout_manager = Arc::new(LayoutManager::new());
-    let input_handler = layout_manager.clone();
-    let draw_handler = layout_manager.clone();
-    tokio::spawn(async move {
-        loop {
-            if key_ok.is_low() {
-                input_handler.input(KeyType::Ok).await;
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-            if key_cancel.is_low() {
-                input_handler.input(KeyType::Cancel).await;
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-    });
-
+    let mut manager = LayoutManager::new();
+    let mut start_time = Instant::now();
     loop {
-        draw_handler.draw(&mut display).await;
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        let current_time = Instant::now();
+        let duration = current_time.duration_since(start_time);
+
+        let input = if key_ok.is_low() {
+            Some(KeyType::Ok)
+        } else if key_cancel.is_low() {
+            Some(KeyType::Cancel)
+        } else {
+            None
+        };
+        match input {
+            Some(key) => {
+                manager.input(key);
+                manager.draw(&mut display);
+                start_time = Instant::now();
+            }
+            None => {
+                if duration > Duration::from_secs(3) {
+                    manager.draw(&mut display);
+                    start_time = Instant::now();
+                }
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
     backlight.set_low();

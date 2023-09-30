@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use anyhow::Result;
 use chrono::prelude::*;
 use display_interface_spi::SPIInterfaceNoCS;
 use embedded_graphics::{
@@ -10,17 +9,10 @@ use embedded_graphics::{
     primitives::Rectangle,
     text::Text,
 };
-use mipidsi::{models::ST7789, Builder, Display};
-use rppal::{
-    gpio::{Gpio, OutputPin},
-    hal::Delay,
-    spi::{Bus, Mode, SlaveSelect, Spi},
-};
-use std::sync::Arc;
+use mipidsi::{models::ST7789, Display};
+use rppal::{gpio::OutputPin, spi::Spi};
 use sysinfo::{System, SystemExt};
 use textwrap::wrap;
-use tokio::sync::Mutex;
-use tracing::info;
 
 use crate::data::*;
 
@@ -49,8 +41,8 @@ pub type SpiDisplay = Display<SPIInterfaceNoCS<Spi, OutputPin>, ST7789, OutputPi
 pub struct LayoutManager<'a> {
     layout_area: Rectangle,
     text_style: MonoTextStyle<'a, Rgb565>,
-    current_layout: Arc<Mutex<LayoutType>>,
-    system: Arc<Mutex<System>>,
+    current_layout: LayoutType,
+    system: System,
 }
 
 impl LayoutManager<'_> {
@@ -58,29 +50,26 @@ impl LayoutManager<'_> {
         Self {
             layout_area: Rectangle::new(Point::new(0, 0), Size::new(240, 240)),
             text_style: MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE),
-            current_layout: Arc::new(Mutex::new(LayoutType::Home)),
-            system: Arc::new(Mutex::new(System::new_all())),
+            current_layout: LayoutType::Home,
+            system: System::new_all(),
         }
     }
 
-    pub async fn draw(&self, display: &mut SpiDisplay) {
-        self.create_header(display).await;
-        self.create_footer(display).await;
+    pub fn draw(&mut self, display: &mut SpiDisplay) {
+        self.create_header(display);
+        self.create_footer(display);
 
-        let lock = self.current_layout.clone();
-        let layout = lock.lock().await;
-        match *layout {
+        match self.current_layout {
             LayoutType::Home => self.create_home_layout(display),
             LayoutType::Menu => self.create_menu_layout(display),
-            LayoutType::SystemInfo => self.create_system_info_layout(display).await,
+            LayoutType::SystemInfo => self.create_system_info_layout(display),
             LayoutType::Wifi => self.create_wifi_layout(display),
         }
     }
 
-    pub async fn input(&self, key: KeyType) {
-        let lock = self.current_layout.clone();
-        let mut layout = lock.lock().await;
-        match *layout {
+    pub fn input(&mut self, key: KeyType) {
+        let layout = &mut self.current_layout;
+        match layout {
             LayoutType::Home => match key {
                 KeyType::Ok => *layout = LayoutType::Menu,
                 KeyType::Cancel => *layout = LayoutType::SystemInfo,
@@ -106,11 +95,9 @@ impl LayoutManager<'_> {
 
     pub fn create_select_list(&self, position: Point, display: &mut SpiDisplay) {}
 
-    pub async fn create_header(&self, display: &mut SpiDisplay) {
-        let lock = self.system.clone();
-        let sys = lock.lock().await;
-        let uptime = sys.uptime();
-        let version = sys.long_os_version().unwrap();
+    pub fn create_header(&self, display: &mut SpiDisplay) {
+        let uptime = self.system.uptime();
+        let version = self.system.long_os_version().unwrap();
         let header_text = format!(
             "{}:{:02}:{:02} {}",
             uptime / 3600,
@@ -133,13 +120,11 @@ impl LayoutManager<'_> {
         );
     }
 
-    pub async fn create_footer(&self, display: &mut SpiDisplay) {
-        let lock = self.current_layout.clone();
-        let layout = lock.lock().await;
+    pub fn create_footer(&self, display: &mut SpiDisplay) {
         let left: String;
         let middle: String = "null".into();
         let right: String;
-        match *layout {
+        match self.current_layout {
             LayoutType::Home => {
                 left = "menu".into();
                 right = "system-info".into();
@@ -194,17 +179,16 @@ impl LayoutManager<'_> {
 
     pub fn create_menu_layout(&self, display: &mut SpiDisplay) {}
 
-    pub async fn create_system_info_layout(&self, display: &mut SpiDisplay) {
+    pub fn create_system_info_layout(&mut self, display: &mut SpiDisplay) {
         let char_h = self.text_style.font.character_size.height;
         let width = self.layout_area.size.width;
         let height = self.layout_area.size.height - 2 * char_h - 20;
         let area = Rectangle::new(Point::new(0, char_h as i32 + 10), Size::new(width, height));
 
-        let lock = self.system.clone();
-        let mut sys = lock.lock().await;
+        let info = get_system_info(&mut self.system);
         draw_list(
             &area,
-            &get_system_info(&mut sys).iter().collect(),
+            &info.iter().collect(),
             self.text_style,
             Rgb565::CSS_DARK_SLATE_GRAY,
             display,
