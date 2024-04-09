@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use chrono::prelude::*;
-use display_interface_spi::SPIInterfaceNoCS;
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X10, MonoTextStyle},
     pixelcolor::Rgb565,
@@ -9,8 +8,6 @@ use embedded_graphics::{
     primitives::Rectangle,
     text::Text,
 };
-use mipidsi::{models::ST7789, Display};
-use rppal::{gpio::OutputPin, spi::Spi};
 use sysinfo::{System, SystemExt};
 use textwrap::wrap;
 
@@ -24,8 +21,6 @@ pub enum LayoutType {
     SystemInfo,
     Wifi,
 }
-
-pub type SpiDisplay = Display<SPIInterfaceNoCS<Spi, OutputPin>, ST7789, OutputPin>;
 
 pub struct LayoutManager<'a> {
     layout_area: Rectangle,
@@ -56,24 +51,24 @@ impl LayoutManager<'_> {
         }
     }
 
-    pub fn input(&mut self, key: KeyMap) {
+    pub fn input(&mut self, key: PinMap) {
         let layout = &mut self.current_layout;
         match layout {
             LayoutType::Home => match key {
-                KeyMap::KeyOk => *layout = LayoutType::Menu,
-                KeyMap::KeyCancel => *layout = LayoutType::SystemInfo,
+                PinMap::KeyOk => *layout = LayoutType::Menu,
+                PinMap::KeyCancel => *layout = LayoutType::SystemInfo,
                 _ => {}
             },
             LayoutType::Menu => match key {
-                KeyMap::KeyMain => *layout = LayoutType::Home,
+                PinMap::KeyMain => *layout = LayoutType::Home,
                 _ => {}
             },
             LayoutType::SystemInfo => match key {
-                KeyMap::KeyMain => *layout = LayoutType::Home,
+                PinMap::KeyMain => *layout = LayoutType::Home,
                 _ => {}
             },
             LayoutType::Wifi => match key {
-                KeyMap::KeyMain => *layout = LayoutType::Home,
+                PinMap::KeyMain => *layout = LayoutType::Home,
                 _ => {}
             },
         }

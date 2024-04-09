@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::layout::{LayoutManager, SpiDisplay};
+use crate::layout::LayoutManager;
 use crate::types::*;
 
 pub struct Actor<'a> {
@@ -9,7 +9,7 @@ pub struct Actor<'a> {
 }
 
 pub enum ActorMessage {
-    GetKey(KeyMap),
+    GetKey(PinMap),
     UpdateScreen(Box<SpiDisplay>),
 }
 
