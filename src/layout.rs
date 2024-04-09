@@ -15,6 +15,7 @@ use sysinfo::{System, SystemExt};
 use textwrap::wrap;
 
 use crate::data::*;
+use crate::types::*;
 
 #[derive(Debug)]
 pub enum LayoutType {
@@ -22,18 +23,6 @@ pub enum LayoutType {
     Menu,
     SystemInfo,
     Wifi,
-}
-
-#[derive(Debug)]
-pub enum KeyType {
-    Up,
-    Down,
-    Left,
-    Right,
-    Press,
-    Ok,
-    Main,
-    Cancel,
 }
 
 pub type SpiDisplay = Display<SPIInterfaceNoCS<Spi, OutputPin>, ST7789, OutputPin>;
@@ -67,25 +56,24 @@ impl LayoutManager<'_> {
         }
     }
 
-    pub fn input(&mut self, key: KeyType) {
+    pub fn input(&mut self, key: KeyMap) {
         let layout = &mut self.current_layout;
         match layout {
             LayoutType::Home => match key {
-                KeyType::Ok => *layout = LayoutType::Menu,
-                KeyType::Cancel => *layout = LayoutType::SystemInfo,
+                KeyMap::KeyOk => *layout = LayoutType::Menu,
+                KeyMap::KeyCancel => *layout = LayoutType::SystemInfo,
                 _ => {}
             },
             LayoutType::Menu => match key {
-                KeyType::Ok => {}
-                KeyType::Cancel => *layout = LayoutType::Home,
+                KeyMap::KeyMain => *layout = LayoutType::Home,
                 _ => {}
             },
             LayoutType::SystemInfo => match key {
-                KeyType::Cancel => *layout = LayoutType::Home,
+                KeyMap::KeyMain => *layout = LayoutType::Home,
                 _ => {}
             },
             LayoutType::Wifi => match key {
-                KeyType::Cancel => *layout = LayoutType::Home,
+                KeyMap::KeyMain => *layout = LayoutType::Home,
                 _ => {}
             },
         }
@@ -121,28 +109,20 @@ impl LayoutManager<'_> {
     }
 
     pub fn create_footer(&self, display: &mut SpiDisplay) {
-        let left: String;
-        let middle: String = "null".into();
-        let right: String;
+        let mut left: String = "null".into();
+        let mut middle: String = "home".into();
+        let mut right: String = "null".into();
         match self.current_layout {
             LayoutType::Home => {
                 left = "menu".into();
+                middle = "null".into();
                 right = "system-info".into();
             }
-            LayoutType::Menu => {
-                left = "null".into();
-                right = "home".into();
-            }
-            LayoutType::SystemInfo => {
-                left = "null".into();
-                right = "home".into();
-            }
-            LayoutType::Wifi => {
-                left = "null".into();
-                right = "home".into();
-            }
+            LayoutType::Menu => {}
+            LayoutType::SystemInfo => {}
+            LayoutType::Wifi => {}
         }
-        let footer_text = format!("{left}  {middle}  {right}");
+        let footer_text = format!("{left} | {middle} | {right}");
 
         let char_h = self.text_style.font.character_size.height;
         let width = self.layout_area.size.width;
@@ -177,7 +157,21 @@ impl LayoutManager<'_> {
         );
     }
 
-    pub fn create_menu_layout(&self, display: &mut SpiDisplay) {}
+    pub fn create_menu_layout(&self, display: &mut SpiDisplay) {
+        let char_h = self.text_style.font.character_size.height;
+        let width = self.layout_area.size.width;
+        let height = self.layout_area.size.height - 2 * char_h - 20;
+        let area = Rectangle::new(Point::new(0, char_h as i32 + 10), Size::new(width, height));
+
+        let content = "Menu Screen".to_string();
+        draw_text(
+            &area,
+            &content,
+            self.text_style,
+            Rgb565::CSS_DARK_SLATE_GRAY,
+            display,
+        );
+    }
 
     pub fn create_system_info_layout(&mut self, display: &mut SpiDisplay) {
         let char_h = self.text_style.font.character_size.height;
