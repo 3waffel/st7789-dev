@@ -27,23 +27,21 @@
           overlays = [
             fenix.overlays.default
             (final: prev: {
-              toolchain = with prev.fenix;
+              fenixToolchain = with prev.fenix;
                 combine [
-                  (complete.withComponents [
-                    "cargo"
-                    "clippy"
-                    "rust-src"
-                    "rustc"
-                    "rustfmt"
-                  ])
+                  stable.clippy
+                  stable.rustc
+                  stable.cargo
+                  stable.rustfmt
+                  stable.rust-src
                 ];
             })
           ];
         };
-        naersk-lib = with pkgs;
+        _naersk = with pkgs;
           naersk.lib.${system}.override {
-            cargo = toolchain;
-            rustc = toolchain;
+            cargo = fenixToolchain;
+            rustc = fenixToolchain;
           };
         pyPkgs = ps:
           with ps; [
@@ -52,17 +50,62 @@
             numpy
             rpi-gpio
           ];
-      in rec {
-        packages.default = naersk-lib.buildPackage {
-          pname = "st7789-dev";
-          src = ./.;
+        env = {
+          DEP_LV_CONFIG_PATH = "${self}/include";
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
         };
+      in rec {
+        packages.default = packages.fromNaive;
+        packages.fromNaersk = with pkgs;
+          _naersk.buildPackage {
+            pname = "st7789-dev";
+            src = ./.;
+            buildInputs = [
+              clang
+              gcc.cc.lib
+            ];
+            nativeBuildInputs = [
+              pkg-config
+              rustPlatform.bindgenHook
+            ];
+            inherit env;
+          };
+        packages.fromNaive = with pkgs;
+          rustPlatform.buildRustPackage {
+            pname = "st7789-dev";
+            inherit ((lib.importTOML ./Cargo.toml).package) version;
+            doCheck = false;
+            src = lib.cleanSource ./.;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              allowBuiltinFetchGit = true;
+            };
+            buildInputs = [
+              clang
+              gcc.cc.lib
+            ];
+            nativeBuildInputs = [
+              pkg-config
+              rustPlatform.bindgenHook
+            ];
+            inherit env;
+          };
         devShells.default = with pkgs;
           mkShell {
             packages = [
-              toolchain
+              fenixToolchain
+              cargo-watch
+              rust-analyzer
+
+              pkg-config
+              clang
+              gcc.cc.lib
               (python3.withPackages pyPkgs)
             ];
+            nativeBuildInputs = [
+              rustPlatform.bindgenHook
+            ];
+            inherit env;
           };
       }
     )
@@ -87,7 +130,6 @@
 
           config = mkIf cfg.enable {
             systemd.services.st7789-dev = {
-              after = ["network-online.target"];
               wantedBy = ["multi-user.target"];
               environment = {};
               serviceConfig = {

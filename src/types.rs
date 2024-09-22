@@ -1,22 +1,13 @@
 use anyhow::Result;
 use display_interface_spi::SPIInterfaceNoCS;
-use embedded_graphics::{
-    draw_target::DrawTarget,
-    pixelcolor::{Rgb565, RgbColor},
-};
 use mipidsi::{models::ST7789, Display};
 use rppal::gpio::{Gpio, InputPin};
 use rppal::{gpio::OutputPin, spi::Spi};
 
+pub const WIDTH: u32 = 240;
+pub const HEIGHT: u32 = 240;
+
 pub type SpiDisplay = Display<SPIInterfaceNoCS<Spi, OutputPin>, ST7789, OutputPin>;
-
-pub struct DisplayWrapper(pub SpiDisplay);
-
-impl Drop for DisplayWrapper {
-    fn drop(&mut self) {
-        self.0.clear(Rgb565::BLACK).unwrap();
-    }
-}
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]

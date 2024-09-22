@@ -2,7 +2,7 @@
 
 use chrono::prelude::*;
 use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
+    mono_font::{ascii::FONT_6X10, iso_8859_2::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
     primitives::Rectangle,
@@ -15,26 +15,45 @@ use crate::data::*;
 use crate::types::*;
 
 #[derive(Debug)]
-pub enum LayoutType {
+pub enum ScreenOptions {
     Home,
     Menu,
     SystemInfo,
-    Wifi,
 }
 
-pub struct LayoutManager<'a> {
-    layout_area: Rectangle,
-    text_style: MonoTextStyle<'a, Rgb565>,
-    current_layout: LayoutType,
+pub struct ThemeSchema {
+    body_text_style: MonoTextStyle<'static, Rgb565>,
+    headline_text_style: MonoTextStyle<'static, Rgb565>,
+    header_background_color: Rgb565,
+    body_background_color: Rgb565,
+    footer_background_color: Rgb565,
+}
+
+impl ThemeSchema {
+    pub fn new() -> Self {
+        Self {
+            body_text_style: MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE),
+            headline_text_style: MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
+            header_background_color: Rgb565::CSS_DARK_VIOLET,
+            body_background_color: Rgb565::CSS_DARK_SLATE_GRAY,
+            footer_background_color: Rgb565::BLACK,
+        }
+    }
+}
+
+pub struct LayoutManager {
+    screen_area: Rectangle,
+    theme: ThemeSchema,
+    current_screen: ScreenOptions,
     system: System,
 }
 
-impl LayoutManager<'_> {
+impl LayoutManager {
     pub fn new() -> Self {
         Self {
-            layout_area: Rectangle::new(Point::new(0, 0), Size::new(240, 240)),
-            text_style: MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE),
-            current_layout: LayoutType::Home,
+            screen_area: Rectangle::new(Point::new(0, 0), Size::new(240, 240)),
+            theme: ThemeSchema::new(),
+            current_screen: ScreenOptions::Home,
             system: System::new_all(),
         }
     }
@@ -43,40 +62,31 @@ impl LayoutManager<'_> {
         self.create_header(display);
         self.create_footer(display);
 
-        match self.current_layout {
-            LayoutType::Home => self.create_home_layout(display),
-            LayoutType::Menu => self.create_menu_layout(display),
-            LayoutType::SystemInfo => self.create_system_info_layout(display),
-            LayoutType::Wifi => self.create_wifi_layout(display),
+        match self.current_screen {
+            ScreenOptions::Home => self.create_home_layout(display),
+            ScreenOptions::Menu => self.create_menu_layout(display),
+            ScreenOptions::SystemInfo => self.create_system_info_layout(display),
         }
     }
 
     pub fn input(&mut self, key: PinMap) {
-        let layout = &mut self.current_layout;
+        let layout = &mut self.current_screen;
         match layout {
-            LayoutType::Home => match key {
-                PinMap::KeyOk => *layout = LayoutType::Menu,
-                PinMap::KeyCancel => *layout = LayoutType::SystemInfo,
+            ScreenOptions::Home => match key {
+                PinMap::KeyOk => *layout = ScreenOptions::Menu,
+                PinMap::KeyCancel => *layout = ScreenOptions::SystemInfo,
                 _ => {}
             },
-            LayoutType::Menu => match key {
-                PinMap::KeyMain => *layout = LayoutType::Home,
+            ScreenOptions::Menu => match key {
+                PinMap::KeyMain => *layout = ScreenOptions::Home,
                 _ => {}
             },
-            LayoutType::SystemInfo => match key {
-                PinMap::KeyMain => *layout = LayoutType::Home,
-                _ => {}
-            },
-            LayoutType::Wifi => match key {
-                PinMap::KeyMain => *layout = LayoutType::Home,
+            ScreenOptions::SystemInfo => match key {
+                PinMap::KeyMain => *layout = ScreenOptions::Home,
                 _ => {}
             },
         }
     }
-
-    pub fn create_label(&self, position: Point, display: &mut SpiDisplay) {}
-
-    pub fn create_select_list(&self, position: Point, display: &mut SpiDisplay) {}
 
     pub fn create_header(&self, display: &mut SpiDisplay) {
         let uptime = self.system.uptime();
@@ -89,16 +99,17 @@ impl LayoutManager<'_> {
             version
         );
 
-        let char_h = self.text_style.font.character_size.height;
-        let width = self.layout_area.size.width;
+        let text_style = self.theme.body_text_style;
+        let char_h = text_style.font.character_size.height;
+        let width = self.screen_area.size.width;
         let height = char_h + 10;
         let area = Rectangle::new(Point::new(0, 0), Size::new(width, height));
 
         draw_text(
             &area,
             &header_text,
-            self.text_style,
-            Rgb565::CSS_DARK_VIOLET,
+            text_style,
+            self.theme.header_background_color,
             display,
         );
     }
@@ -107,86 +118,88 @@ impl LayoutManager<'_> {
         let mut left: String = "null".into();
         let mut middle: String = "home".into();
         let mut right: String = "null".into();
-        match self.current_layout {
-            LayoutType::Home => {
+        match self.current_screen {
+            ScreenOptions::Home => {
                 left = "menu".into();
                 middle = "null".into();
                 right = "system-info".into();
             }
-            LayoutType::Menu => {}
-            LayoutType::SystemInfo => {}
-            LayoutType::Wifi => {}
+            ScreenOptions::Menu => {}
+            ScreenOptions::SystemInfo => {}
         }
         let footer_text = format!("{left} | {middle} | {right}");
 
-        let char_h = self.text_style.font.character_size.height;
-        let width = self.layout_area.size.width;
+        let text_style = self.theme.body_text_style;
+        let char_h = text_style.font.character_size.height;
+        let width = self.screen_area.size.width;
         let height = char_h + 10;
         let area = Rectangle::new(
-            Point::new(0, (self.layout_area.size.height - char_h - 10) as i32),
+            Point::new(0, (self.screen_area.size.height - height) as i32),
             Size::new(width, height),
         );
 
         draw_text(
             &area,
             &footer_text,
-            self.text_style,
-            Rgb565::CSS_BLACK,
+            text_style,
+            self.theme.footer_background_color,
             display,
         );
     }
 
     pub fn create_home_layout(&self, display: &mut SpiDisplay) {
-        let char_h = self.text_style.font.character_size.height;
-        let width = self.layout_area.size.width;
-        let height = self.layout_area.size.height - 2 * char_h - 20;
-        let area = Rectangle::new(Point::new(0, char_h as i32 + 10), Size::new(width, height));
+        let text_style = self.theme.headline_text_style;
+        let char_h = text_style.font.character_size.height;
+        let width = self.screen_area.size.width;
+        let height = self.screen_area.size.height - 2 * char_h - 20;
+        let area = Rectangle::new(Point::new(0, 20), Size::new(width, height));
 
         let dt = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         draw_text(
             &area,
             &dt,
-            self.text_style,
-            Rgb565::CSS_DARK_SLATE_GRAY,
+            text_style,
+            self.theme.body_background_color,
             display,
         );
     }
 
     pub fn create_menu_layout(&self, display: &mut SpiDisplay) {
-        let char_h = self.text_style.font.character_size.height;
-        let width = self.layout_area.size.width;
-        let height = self.layout_area.size.height - 2 * char_h - 20;
-        let area = Rectangle::new(Point::new(0, char_h as i32 + 10), Size::new(width, height));
+        let text_style = self.theme.headline_text_style;
+        let char_h = text_style.font.character_size.height;
+        let width = self.screen_area.size.width;
+        let height = self.screen_area.size.height - 2 * char_h - 20;
+        let area = Rectangle::new(Point::new(0, 20), Size::new(width, height));
 
         let content = "Menu Screen".to_string();
         draw_text(
             &area,
             &content,
-            self.text_style,
-            Rgb565::CSS_DARK_SLATE_GRAY,
+            text_style,
+            self.theme.body_background_color,
             display,
         );
     }
 
     pub fn create_system_info_layout(&mut self, display: &mut SpiDisplay) {
-        let char_h = self.text_style.font.character_size.height;
-        let width = self.layout_area.size.width;
-        let height = self.layout_area.size.height - 2 * char_h - 20;
-        let area = Rectangle::new(Point::new(0, char_h as i32 + 10), Size::new(width, height));
+        let text_style = self.theme.body_text_style;
+        let char_h = text_style.font.character_size.height;
+        let width = self.screen_area.size.width;
+        let height = self.screen_area.size.height - 2 * char_h - 20;
+        let area = Rectangle::new(Point::new(0, 20), Size::new(width, height));
 
-        let info = get_system_info(&mut self.system);
+        let info = get_system_info();
         draw_list(
             &area,
             &info.iter().collect(),
-            self.text_style,
-            Rgb565::CSS_DARK_SLATE_GRAY,
+            text_style,
+            self.theme.body_background_color,
             display,
         );
     }
-
-    pub fn create_wifi_layout(&self, display: &mut SpiDisplay) {}
 }
 
+/// draw wrapped text in target area
 pub fn draw_text(
     area: &Rectangle,
     text: &String,
