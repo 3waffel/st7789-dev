@@ -2,22 +2,19 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     utils.url = "github:numtide/flake-utils";
-    naersk = {
-      url = "github:nix-community/naersk/master";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    crane.url = "github:ipetkov/crane";
   };
 
   outputs = {
     self,
     nixpkgs,
     utils,
-    naersk,
     fenix,
+    crane,
     ...
   }:
     utils.lib.eachDefaultSystem (
@@ -38,11 +35,7 @@
             })
           ];
         };
-        _naersk = with pkgs;
-          naersk.lib.${system}.override {
-            cargo = fenixToolchain;
-            rustc = fenixToolchain;
-          };
+        _crane = (crane.mkLib pkgs).overrideToolchain pkgs.fenixToolchain;
         pyPkgs = ps:
           with ps; [
             pillow
@@ -55,31 +48,12 @@
           LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
         };
       in rec {
-        packages.default = packages.fromNaive;
-        packages.fromNaersk = with pkgs;
-          _naersk.buildPackage {
+        packages.default = packages.fromCrane;
+        packages.fromCrane = with pkgs;
+          _crane.buildPackage {
             pname = "st7789-dev";
-            src = ./.;
-            buildInputs = [
-              clang
-              gcc.cc.lib
-            ];
-            nativeBuildInputs = [
-              pkg-config
-              rustPlatform.bindgenHook
-            ];
-            inherit env;
-          };
-        packages.fromNaive = with pkgs;
-          rustPlatform.buildRustPackage {
-            pname = "st7789-dev";
-            inherit ((lib.importTOML ./Cargo.toml).package) version;
-            doCheck = false;
             src = lib.cleanSource ./.;
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-              allowBuiltinFetchGit = true;
-            };
+            doCheck = false;
             buildInputs = [
               clang
               gcc.cc.lib

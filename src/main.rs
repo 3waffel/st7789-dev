@@ -1,9 +1,12 @@
 #![allow(dead_code)]
 
-use anyhow::Result;
 use cstr_core::CString;
 use display_interface_spi::SPIInterfaceNoCS;
+use embassy_executor::Executor;
+use embassy_time as _;
+use embassy_time::{Duration, Instant, Timer};
 use embedded_graphics::prelude::*;
+use log::*;
 use lvgl::{
     style::Style, widgets::Label, Align, Color, Display, DrawBuffer, Part, Screen, TextAlign,
     Widget,
@@ -17,27 +20,28 @@ use rppal::{
     hal::Delay,
     spi::{Bus, Mode, SlaveSelect, Spi},
 };
-use std::time::Duration;
-use std::time::Instant;
-use tracing::info;
+use static_cell::StaticCell;
 
 pub mod data;
 pub mod layout;
 pub mod types;
 use data::*;
-// use layout::*;
 use types::*;
+// use layout::*;
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+static EXECUTOR: StaticCell<Executor> = StaticCell::new();
 
-    let gpio = Gpio::new()?;
-    let dc = gpio.get(PinMap::SpiDc as u8)?.into_output();
-    let rst = gpio.get(PinMap::SpiRst as u8)?.into_output();
-    let mut backlight = gpio.get(PinMap::Backlight as u8)?.into_output();
+fn main() {
+    env_logger::builder()
+        .filter_level(LevelFilter::Debug)
+        .init();
 
-    let spi = Spi::new(Bus::Spi0, SlaveSelect::Ss0, 40_000_000_u32, Mode::Mode0)?;
+    let gpio = Gpio::new().unwrap();
+    let dc = gpio.get(PinMap::SpiDc as u8).unwrap().into_output();
+    let rst = gpio.get(PinMap::SpiRst as u8).unwrap().into_output();
+    let mut backlight = gpio.get(PinMap::Backlight as u8).unwrap().into_output();
+
+    let spi = Spi::new(Bus::Spi0, SlaveSelect::Ss0, 40_000_000_u32, Mode::Mode0).unwrap();
     let di = SPIInterfaceNoCS::new(spi, dc);
     let mut delay = Delay::new();
     let mut spi_display = Builder::st7789(di)
@@ -49,9 +53,8 @@ async fn main() -> Result<()> {
 
     info!("SPI set up");
 
-    backlight.set_pwm_frequency(100., 0.005)?;
+    backlight.set_pwm_frequency(100., 0.005).unwrap();
     backlight.set_high();
-
     lvgl::init();
     let buffer = DrawBuffer::<{ (WIDTH * HEIGHT) as usize }>::default();
     let display = Display::register(buffer, WIDTH, HEIGHT, |refresh| {
@@ -59,6 +62,14 @@ async fn main() -> Result<()> {
     })
     .unwrap();
 
+    let executor = EXECUTOR.init(Executor::new());
+    executor.run(|spawner| {
+        spawner.spawn(run(display)).unwrap();
+    });
+}
+
+#[embassy_executor::task]
+async fn run(display: Display) {
     let mut home_scr = display.get_scr_act().unwrap();
     let mut home_scr_style = Style::default();
     home_scr_style.set_bg_color(Color::from_rgb((0, 0, 0)));
@@ -104,7 +115,7 @@ async fn main() -> Result<()> {
         lvgl::task_handler();
         let mut input = None;
         for key in KEY_TYPE {
-            if key.get_input_pin()?.is_low() {
+            if key.get_input_pin().unwrap().is_low() {
                 input = Some(key);
                 break;
             }
@@ -133,7 +144,7 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        lvgl::tick_inc(Instant::now().duration_since(current_time));
+        Timer::after_millis(200).await;
+        lvgl::tick_inc(Instant::now().duration_since(current_time).into());
     }
 }
