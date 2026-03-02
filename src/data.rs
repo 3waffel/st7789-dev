@@ -13,7 +13,7 @@ pub fn get_header_info() -> String {
     )
 }
 
-pub fn get_system_info() -> Vec<String> {
+pub fn get_system_info() -> String {
     let mut sys = System::new_all();
     sys.refresh_cpu();
     sys.refresh_memory();
@@ -65,5 +65,5 @@ pub fn get_system_info() -> Vec<String> {
             })
             .collect::<Vec<_>>(),
     );
-    data
+    data.join("\n")
 }

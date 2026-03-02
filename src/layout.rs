@@ -11,7 +11,7 @@ use embedded_graphics::{
 use sysinfo::{System, SystemExt};
 use textwrap::wrap;
 
-use crate::data::*;
+// use crate::data::*;
 use crate::types::*;
 
 #[derive(Debug)]
@@ -27,6 +27,12 @@ pub struct ThemeSchema {
     header_background_color: Rgb565,
     body_background_color: Rgb565,
     footer_background_color: Rgb565,
+}
+
+impl Default for ThemeSchema {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ThemeSchema {
@@ -46,6 +52,12 @@ pub struct LayoutManager {
     theme: ThemeSchema,
     current_screen: ScreenOptions,
     system: System,
+}
+
+impl Default for LayoutManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LayoutManager {
@@ -77,14 +89,16 @@ impl LayoutManager {
                 PinMap::KeyCancel => *layout = ScreenOptions::SystemInfo,
                 _ => {}
             },
-            ScreenOptions::Menu => match key {
-                PinMap::KeyMain => *layout = ScreenOptions::Home,
-                _ => {}
-            },
-            ScreenOptions::SystemInfo => match key {
-                PinMap::KeyMain => *layout = ScreenOptions::Home,
-                _ => {}
-            },
+            ScreenOptions::Menu => {
+                if let PinMap::KeyMain = key {
+                    *layout = ScreenOptions::Home
+                }
+            }
+            ScreenOptions::SystemInfo => {
+                if let PinMap::KeyMain = key {
+                    *layout = ScreenOptions::Home
+                }
+            }
         }
     }
 
@@ -188,10 +202,11 @@ impl LayoutManager {
         let height = self.screen_area.size.height - 2 * char_h - 20;
         let area = Rectangle::new(Point::new(0, 20), Size::new(width, height));
 
-        let info = get_system_info();
+        // let info = get_system_info();
         draw_list(
             &area,
-            &info.iter().collect(),
+            // &info.iter().collect(),
+            &vec![],
             text_style,
             self.theme.body_background_color,
             display,
@@ -211,7 +226,7 @@ pub fn draw_text(
     let y = area.top_left.y;
     let width = area.size.width;
     let height = area.size.height;
-    let display = &mut display.clipped(&area);
+    let display = &mut display.clipped(area);
     display.clear(background_color).unwrap();
 
     let char_h = text_style.font.character_size.height as i32;
@@ -241,7 +256,7 @@ pub fn draw_list(
     let y = area.top_left.y;
     let width = area.size.width;
     let height = area.size.height;
-    let display = &mut display.clipped(&area);
+    let display = &mut display.clipped(area);
     display.clear(background_color).unwrap();
 
     let char_h = text_style.font.character_size.height as i32;
@@ -258,7 +273,7 @@ pub fn draw_list(
         if text_y + char_h > y + height as i32 {
             break;
         }
-        Text::new(&line, Point::new(x, text_y), text_style)
+        Text::new(line, Point::new(x, text_y), text_style)
             .draw(display)
             .unwrap();
     }

@@ -21,13 +21,13 @@ use rppal::{
     spi::{Bus, Mode, SlaveSelect, Spi},
 };
 use static_cell::StaticCell;
+use std::process::Command;
 
 pub mod data;
 pub mod layout;
 pub mod types;
 use data::*;
 use types::*;
-// use layout::*;
 
 static EXECUTOR: StaticCell<Executor> = StaticCell::new();
 
@@ -53,15 +53,18 @@ fn main() {
 
     info!("SPI set up");
 
+    // Set refresh rate and brightness
     backlight.set_pwm_frequency(100., 0.005).unwrap();
     backlight.set_high();
     lvgl::init();
+
     let buffer = DrawBuffer::<{ (WIDTH * HEIGHT) as usize }>::default();
     let display = Display::register(buffer, WIDTH, HEIGHT, |refresh| {
         spi_display.draw_iter(refresh.as_pixels()).unwrap();
     })
     .unwrap();
 
+    // Start the main loop
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
         spawner.spawn(run(display)).unwrap();
@@ -76,15 +79,6 @@ async fn run(display: Display) {
     home_scr_style.set_radius(0);
     home_scr.add_style(Part::Main, &mut home_scr_style);
 
-    let mut header_label = Label::new().unwrap();
-    let mut header_style = Style::default();
-    header_style.set_text_color(Color::from_rgb((255, 255, 255)));
-    header_style.set_text_align(TextAlign::Center);
-    header_label.add_style(Part::Main, &mut header_style);
-    header_label.set_align(Align::TopMid, 0, 0);
-    let val = CString::new(get_header_info()).unwrap();
-    header_label.set_text(&val).unwrap();
-
     let mut info_label = Label::new().unwrap();
     let mut info_style = Style::default();
     info_style.set_text_color(Color::from_rgb((255, 255, 255)));
@@ -92,8 +86,7 @@ async fn run(display: Display) {
     info_label.add_style(Part::Main, &mut info_style);
     info_label.set_align(Align::Center, 0, 0);
     info_label.set_width(WIDTH);
-    let val = CString::new(get_system_info().join("\n")).unwrap();
-    info_label.set_text(&val).unwrap();
+    info_label.set_height(HEIGHT);
 
     let mut blank_scr = Screen::blank().unwrap();
     let mut blank_scr_style = Style::default();
@@ -101,11 +94,13 @@ async fn run(display: Display) {
     blank_scr_style.set_radius(0);
     blank_scr.add_style(Part::Main, &mut blank_scr_style);
 
-    // let mut manager = LayoutManager::new(&mut display);
     let mut last_refresh_time = Instant::now();
     let mut last_input_time = Instant::now();
 
     info!("Starting main loop");
+
+    let mut info_val = CString::new(get_system_info()).unwrap();
+    info_label.set_text(&info_val).unwrap();
 
     loop {
         let current_time = Instant::now();
@@ -117,29 +112,42 @@ async fn run(display: Display) {
         for key in KEY_TYPE {
             if key.get_input_pin().unwrap().is_low() {
                 input = Some(key);
+                last_input_time = Instant::now();
+                last_refresh_time = Instant::now();
+                display.set_scr_act(&mut home_scr);
                 break;
             }
         }
 
         match input {
-            Some(key) => {
-                // manager.input(key);
-                // manager.draw();
-                display.set_scr_act(&mut home_scr);
-                last_input_time = Instant::now();
-                last_refresh_time = Instant::now();
+            Some(PinMap::KeyOk) => {
+                let cmd = Command::new("neofetch").arg("--stdout").output();
+                let val = match cmd {
+                    Ok(out) => CString::new(out.stdout),
+                    Err(err) => CString::new(err.to_string()),
+                };
+                info_val = val.unwrap();
             }
+            Some(PinMap::KeyMain) => {
+                let cmd = Command::new("tailscale").arg("status").output();
+                let val = match cmd {
+                    Ok(out) => CString::new(out.stdout),
+                    Err(err) => CString::new(err.to_string()),
+                };
+                info_val = val.unwrap();
+            }
+            Some(PinMap::KeyCancel) => {
+                let val = get_system_info();
+                info_val = CString::new(val).unwrap();
+                info_label.set_text(&info_val).unwrap();
+            }
+            Some(_) => {}
             None => {
-                if timeout_duration > Duration::from_secs(20) {
-                    // spi_display.clear(Rgb565::BLACK).unwrap();
+                if timeout_duration > Duration::from_secs(30) {
                     display.set_scr_act(&mut blank_scr);
                 } else if refresh_interval > Duration::from_secs(3) {
                     last_refresh_time = Instant::now();
-                    // manager.draw();
-                    let val = CString::new(get_header_info()).unwrap();
-                    header_label.set_text(&val).unwrap();
-                    let val = CString::new(get_system_info().join("\n")).unwrap();
-                    info_label.set_text(&val).unwrap();
+                    info_label.set_text(&info_val).unwrap();
                     display.set_scr_act(&mut home_scr);
                 }
             }
